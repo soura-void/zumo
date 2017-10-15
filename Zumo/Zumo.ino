@@ -9,7 +9,11 @@
 #define FR	countsArray[3]
 #define RL	countsArray[4]
 #define RR	countsArray[5]
-#define BLEVELS		40
+#define BLEVELS			30
+#define MAXBRIGHTNESS	30
+#define LEFTSPEED		300
+#define RIGHTSPEED		300
+
 
 Zumo32U4LCD lcd;
 Zumo32U4ButtonA A;
@@ -17,6 +21,7 @@ Zumo32U4ButtonB B;
 Zumo32U4ButtonC C;
 Zumo32U4Motors m;
 Zumo32U4ProximitySensors prox;
+Zumo32U4Buzzer buzz;
 
 int MAP = 0;
 static float Kp=0.0, Ki=0.0, Kd=0.0;
@@ -85,10 +90,10 @@ void change_param()
 			switch (state)
 			{
 			case BUTTONB:
-				Kp = Kp + 0.5;
+				Kp = Kp + 0.1;
 				break;
 			case BUTTONC:
-				Kp = Kp - 0.5;
+				Kp = Kp - 0.1;
 				break;
 			}
 		} while (state != BUTTONA);
@@ -144,8 +149,36 @@ void change_param()
 	EEPROM.put(address, Kd);
 }
 
+void startMusic()
+{
+	lcd.clear();
+	lcdPrint("---3---", "To Start");
+	buzz.playFrequency(800, 500, 15);
+	delay(1000);
+	lcd.clear();
+	lcdPrint("---2---", "To Start");
+	buzz.playFrequency(800, 500, 15);
+	delay(1000);
+	lcd.clear();
+	lcdPrint("---1---", "To Start");
+	buzz.playFrequency(800, 500, 15);
+	delay(1000);
+	buzz.playFrequency(2000, 1000, 15);
+}
+
+void welcome()
+{
+	lcdPrint("~~The~~", "Beng Bot");
+	delay(2000);
+	lcdPrint("~~Wall~~", "~Follow~");
+	delay(2000);
+	lcdPrint("Kp", "Ki  Kd");
+	delay(1000);
+}
+
 void setup()
 {
+	welcome();
 	int address = 0;
 	EEPROM.get(0, Kp);
 	address = address + sizeof(float);
@@ -155,12 +188,15 @@ void setup()
 
 	Serial.begin(9600);
 	prox.initThreeSensors();
-	uint16_t *bLevels = new uint16_t[BLEVELS];
-	for (int i = 0; i < BLEVELS; i++)
+	uint16_t *bLevels = new uint16_t[2*BLEVELS];
+	for (int i = 0, k=0; i < BLEVELS; i++)
 	{
-		bLevels[i] = i * (120/BLEVELS);
+		bLevels[k] = i * (MAXBRIGHTNESS / BLEVELS);
+		k++;
+		bLevels[k] = i * (MAXBRIGHTNESS / BLEVELS);
+		k++;
 	}
-	prox.setBrightnessLevels(bLevels, BLEVELS);
+	prox.setBrightnessLevels(bLevels, 2*BLEVELS);
 	
 	String paramValues = String(Ki, 1) + " " + String(Kd, 1);
 	lcd.clear();
@@ -171,6 +207,7 @@ void setup()
 	{
 		if (B.getSingleDebouncedPress())
 		{
+			startMusic();
 			break;
 		}
 		else if (C.getSingleDebouncedPress())
@@ -179,7 +216,7 @@ void setup()
 			break;
 		}
 	}
-	setPoint = calc_set_point();
+	setPoint = 30; //calc_set_point();
 
 }
 
@@ -219,10 +256,7 @@ void test()
 
 int func(int x, int y)
 {
-	if (x == setPoint)
-		return 0;
-
-	return pow(x-setPoint, 2);
+	return x + 2 * y + FL;
 }
 
 int calc_set_point()
@@ -249,7 +283,7 @@ int calc_set_point()
 
 void PID(int val, int set)
 {
-	error = val;
+	error = val - set;
 	control = Kp*error + Kd*lastError + Ki*sumError;
 	lastError = error;
 	if (error = 0)
@@ -285,8 +319,8 @@ void run()
 	if (control > 0)
 	{
 		int l, r;
-		l = 150 + control;
-		r = 150 - control;
+		l = LEFTSPEED - control;
+		r = RIGHTSPEED + control;
 		checkRange(&l, &r);
 		m.setLeftSpeed(l);
 		m.setRightSpeed(r);
@@ -297,21 +331,22 @@ void run()
 	else if (control == 0)
 	{
 		
-		m.setLeftSpeed(150);
-		m.setRightSpeed(150);
+		m.setLeftSpeed(LEFTSPEED);
+		m.setRightSpeed(RIGHTSPEED);
 		lcd.print("Front");
 	}
 	else
 	{
 		control = control*-1;
 		int l, r;
-		r = 150 + control;
-		l = 150 - control;
+		r = RIGHTSPEED - control;
+		l = LEFTSPEED + control;
+		checkRange(&l, &r);
 		m.setRightSpeed(r);
 		m.setLeftSpeed(l);
-		lcd.print(r);
-		lcd.gotoXY(0, 1);
 		lcd.print(l);
+		lcd.gotoXY(0, 1);
+		lcd.print(r);
 	}
 
 }
@@ -328,8 +363,9 @@ void loop()
 	* Populate the countsArray
 	* Get an equation that normalizes the object position to a particular area
 	*/
+
 	read_sensors();
-	printReadingsToSerial();
+	//printReadingsToSerial();
 	follow_right_wall();
 	//motor_test();
 }
